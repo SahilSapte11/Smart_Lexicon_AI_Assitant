@@ -1,0 +1,16 @@
+{
+  "session_id": "15d5f0ad-d4e1-4080-86ac-fb8a1c04ccaf",
+  "title": "tell me about security in 10 words",
+  "created_at": "2025-04-14T21:57:07.719181",
+  "updated_at": "2025-04-14T21:57:25.600177",
+  "messages": [
+    {
+      "role": "user",
+      "content": "tell me about security in 10 words"
+    },
+    {
+      "role": "assistant",
+      "content": "Protecting assets from unauthorized access, use, disclosure, disruption, modification, or destruction."
+    }
+  ]
+}

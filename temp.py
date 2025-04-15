@@ -1,6 +1,9 @@
 import streamlit as st
 from gemini_backend import get_gemini_response  # Import Gemini integration
 from webscrapping import extract_content, format_with_gemini 
+from vector_store_api import upload_pdf_to_chroma
+from vector_rag import query_rag
+
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="AI Assistant",
@@ -27,7 +30,7 @@ if "chat_history_data" not in st.session_state:
     st.session_state["chat_history_data"] = []
 
 # --- CHAT INTERFACE FUNCTION ---
-def chat_interface(chat_context):
+def chat_interface(chat_context, pdf_mode=False):
     st.subheader("💬 Chat with AI")
     
     # Display chat history
@@ -42,8 +45,11 @@ def chat_interface(chat_context):
         # Store user query
         st.session_state[chat_context].append({"role": "user", "content": user_input})
 
-        # Generate response using Gemini
-        bot_response = get_gemini_response(user_input)
+        # Generate response
+        if pdf_mode:
+            bot_response = query_rag(user_input)  # Use RAG for PDF chat
+        else:
+            bot_response = get_gemini_response(user_input)  # Use Gemini for general chat
 
         # Store bot response
         st.session_state[chat_context].append({"role": "assistant", "content": bot_response})
@@ -51,7 +57,6 @@ def chat_interface(chat_context):
         # Display bot response
         with st.chat_message("assistant"):
             st.markdown(bot_response)
-
 
 # --- PERSONALIZED CHATBOT PAGE ---
 def personalized_chatbot():
@@ -62,12 +67,21 @@ def personalized_chatbot():
 # --- DOCUMENT UPLOAD PAGE ---
 def document_upload():
     st.title("📄 Document Upload")
+    
+    # PDF Upload Section
     uploaded_file = st.file_uploader("Upload your document here", type=["pdf", "txt", "docx"])
     if uploaded_file:
-        st.success("Document uploaded successfully! 🟢")
+        with st.spinner("Uploading and indexing your document..."):
+            response_message = upload_pdf_to_chroma(uploaded_file)
+        
+        # Display success or error message
+        if "successfully" in response_message:
+            st.success(response_message)
+        else:
+            st.error(response_message)
 
-    # Embedded chat feature
-    chat_interface("chat_history_doc")
+    # Embedded chat feature for PDF Q&A
+    chat_interface("chat_history_doc", pdf_mode=True)
 
 # --- URL UPLOAD PAGE ---
 def url_upload():
@@ -101,7 +115,6 @@ def url_upload():
             st.warning("Please provide both the URL and custom requirement.")
 
     chat_interface("chat_history_url")
-
 
 # --- DATA ANALYSIS PAGE ---
 def data_analysis():

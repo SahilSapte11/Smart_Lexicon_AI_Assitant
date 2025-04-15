@@ -13,9 +13,29 @@ genai.configure(api_key=api_key)
 model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
 
 # Function to generate response
-def get_gemini_response(user_query):
+def get_gemini_response(user_query, chat_history=None):
     try:
-        response = model.generate_content(user_query)
-        return response.text.strip()  # Clean and return response text
+        prompt = ""
+
+        if chat_history:
+            # Get the last 3 assistant messages (most recent first)
+            assistant_msgs = [
+                msg["content"] for msg in chat_history
+                if msg["role"] == "assistant"
+            ][-3:]  # Take last 3
+
+            if assistant_msgs:
+                prompt += "Here are some previous assistant responses for context:\n"
+                for i, msg in enumerate(assistant_msgs, 1):
+                    prompt += f"{i}. {msg}\n"
+
+        # Add the user's message
+        prompt += f"\nNow the user says:\n\"{user_query}\"\n"
+        prompt += "Please generate an appropriate and context-aware response."
+
+        response = model.generate_content(prompt)
+        return response.text.strip()
+
     except Exception as e:
         return f"Error: {e}"
+

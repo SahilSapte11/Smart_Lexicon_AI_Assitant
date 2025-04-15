@@ -59,38 +59,47 @@ def extract_content(url):
         print(f"Error fetching the URL: {e}")
         return None
 
-def format_with_gemini(json_content, custom_requirement):
+def format_with_gemini(json_content, custom_requirement, chat_history=None):
     """
-    Sends the JSON content and custom requirement to the Gemini model for formatting.
-    
+    Formats the JSON content using Gemini based on custom requirement, optionally using chat history.
+
     Args:
-        json_content (dict): The JSON content to be formatted.
-        custom_requirement (str): The user's custom requirement for formatting.
-    
+        json_content (dict): The scraped content from the webpage.
+        custom_requirement (str): The user's instruction.
+        chat_history (list, optional): Previous chat messages to provide context.
+
     Returns:
-        str: The formatted output from the Gemini model.
+        str: Gemini's formatted output in human language.
     """
     try:
-        # Create the prompt for Gemini
+        # Build base prompt
         prompt = f"""
-        Here is the JSON content extracted from a webpage:
-        {json.dumps(json_content, indent=4,ensure_ascii=False)}
+Here is the JSON content extracted from a webpage:
+{json.dumps(json_content, indent=4, ensure_ascii=False)}
 
-        The user has provided the following custom requirement for formatting:
-        {custom_requirement}
+The user has provided the following custom requirement:
+"{custom_requirement}"
+"""
 
-        Please format the JSON content according to the user's requirement.
-        """
-        
-        # Send the prompt to the Gemini model
+        # Add context from chat history (e.g., previous assistant response)
+        if chat_history:
+            previous_answers = [
+                msg["content"] for msg in reversed(chat_history)
+                if msg["role"] == "assistant"
+            ]
+            if previous_answers:
+                last_answer = previous_answers[0]
+                prompt += f'\nFor context, here is the previous assistant response:\n"{last_answer}"\n'
+
+        prompt += "\nPlease format or adjust the content accordingly."
+
         response = model.generate_content(prompt)
-        
-        # Return the formatted output
         return response.text
-    
+
     except Exception as e:
         print(f"Error formatting with Gemini: {e}")
         return None
+
 
 # Main script
 if __name__ == "__main__":
@@ -98,7 +107,7 @@ if __name__ == "__main__":
     url = input("Enter the URL to scrape: ")
     custom_requirement = input("Enter your custom requirement for formatting: ")
     
-    # Extract content from the URL
+    # Extract content from the URL 
     content = extract_content(url)
     
     if content:

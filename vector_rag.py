@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize Google Gemini Embeddings
-gemini_embeddings = GoogleGenerativeAIEmbeddings(
+gemini_embeddings = GoogleGenerativeAIEmbeddings( 
     model="models/embedding-001",
     google_api_key=os.getenv("GEMINI_API_KEY")
 )
@@ -49,12 +49,37 @@ rag_chain = (
     | StrOutputParser()
 )
 
-def query_rag(question):
+def query_rag(question, chat_history=None):
     """
-    Queries the RAG system with a user question and returns the generated response.
+    Queries the RAG system with a user question and optional chat history for context.
+
+    Args:
+        question (str): The user's question.
+        chat_history (list, optional): Chat history to extract previous assistant responses.
+
+    Returns:
+        str: The RAG-generated response.
     """
     try:
-        response = rag_chain.invoke(question)
-        return response
+        # Build enriched question with chat history if available
+        enriched_prompt = ""
+
+        if chat_history:
+            assistant_msgs = [
+                msg["content"] for msg in chat_history
+                if msg["role"] == "assistant"
+            ][-3:]  # Last 3 assistant replies
+
+            if assistant_msgs:
+                enriched_prompt += "Previous assistant responses for context:\n"
+                for i, msg in enumerate(assistant_msgs, 1):
+                    enriched_prompt += f"{i}. {msg}\n"
+
+        # Add the new user question
+        enriched_prompt += f"\nUser's current question:\n{question}"
+
+        response = rag_chain.invoke(enriched_prompt)
+        return response.strip()
+
     except Exception as e:
         return f"Error: {str(e)}"

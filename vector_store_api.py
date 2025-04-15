@@ -12,7 +12,7 @@ load_dotenv()
 # Initialize Google Gemini Embeddings
 gemini_embeddings = GoogleGenerativeAIEmbeddings(
     model="models/embedding-001",
-    google_api_key=os.getenv("GEMINI_API_KEY")
+    google_api_key=os.getenv("GEMINI_API_KEY") 
 )
 
 # Initialize ChromaDB vector store
