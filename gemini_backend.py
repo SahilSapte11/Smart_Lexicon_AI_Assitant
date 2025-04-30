@@ -10,7 +10,7 @@ api_key = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=api_key)
 
 # Initialize model
-model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
+model = genai.GenerativeModel("models/gemini-2.0-flash")
 
 # Function to generate response
 def get_gemini_response(user_query, chat_history=None):

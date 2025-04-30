@@ -24,7 +24,7 @@ vector_store = Chroma(
 
 # Initialize Google Gemini Chat Model
 gemini_chat = ChatGoogleGenerativeAI(
-    model="gemini-1.5-pro-latest",
+    model="gemini-2.0-flash",
     google_api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.7
 )

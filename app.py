@@ -7,67 +7,190 @@ from session_manager import (
     list_sessions, create_new_session,
     load_session, save_message
 )
+import mysql.connector
+from mysql.connector import Error
+import hashlib
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="AI Assistant",
-    page_icon="🤖",
-    layout="wide"
-)
+# Global variables
+context = None
+current_session_id = None
+# --- AUTHENTICATION FUNCTIONS (from login.py) ---
+def create_connection():
+    return mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="root",
+        database="smartlexicon"
+    )
 
-# --- CONTEXT MAPPING ---
-CONTEXTS = {
-    "🤖 Personalized Chatbot": "chatbot",
-    "📄 Document Upload": "doc",
-    "🌐 URL Upload": "url",
-    "📊 Data Analysis": "data"
-}
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-# --- SIDEBAR NAVIGATION ---
-with st.sidebar:
-    st.title("🔍 Navigation")
-    page = st.radio("Choose a feature:", list(CONTEXTS.keys()))
-    context = CONTEXTS[page]
+def authenticate_user(username, password):
+    try:
+        connection = create_connection()
+        cursor = connection.cursor()
+        hashed_pw = hash_password(password)
+        cursor.execute("SELECT * FROM users WHERE username = %s AND password = %s", (username, hashed_pw))
+        result = cursor.fetchone()
+        return result is not None
+    except Error as e:
+        st.error(f"Database error: {e}")
+        return False
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
 
-    # Session Selector
-    st.markdown("### 💬 Chat Sessions")
-    existing_sessions = list_sessions(context)
-    session_options = [s["title"] + f" ({s['id'][:6]})" for s in existing_sessions]
-    session_map = {s["title"] + f" ({s['id'][:6]})": s["id"] for s in existing_sessions}
+def insert_user(username, password):
+    try:
+        connection = create_connection()
+        cursor = connection.cursor()
+        hashed_pw = hash_password(password)
+        cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_pw))
+        connection.commit()
+        return True
+    except Error as e:
+        st.error(f"Database error: {e}")
+        return False
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
 
-    # Track previous session ID to detect switch
-    previous_session_id = st.session_state.get(f"current_session_id_{context}", None)
+def auth_style():
+    st.markdown("""
+        <style>
+        .auth-container {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 15px #aaa;
+            max-width: 400px;
+            margin: auto;
+        }
+        .auth-title {
+            text-align: center;
+            color: #4CAF50;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-    selected_option = st.selectbox("Select a session:", session_options) if session_options else None
-    current_session_id = session_map[selected_option] if selected_option else None
-    st.session_state[f"current_session_id_{context}"] = current_session_id
+def show_auth_page():
+    """Show login/signup forms"""
+    auth_style()
+    st.markdown('<div class="auth-container">', unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+    
+    with tab1:
+        st.markdown("<h2 class='auth-title'>Login</h2>", unsafe_allow_html=True)
+        username = st.text_input("Username", key="login_user")
+        password = st.text_input("Password", type="password", key="login_pass")
+        if st.button("Login", key="login_btn"):
+            if authenticate_user(username, password):
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
+    
+    with tab2:
+        st.markdown("<h2 class='auth-title'>Sign Up</h2>", unsafe_allow_html=True)
+        new_user = st.text_input("Create Username", key="signup_user")
+        new_pass = st.text_input("Create Password", type="password", key="signup_pass")
+        confirm_pass = st.text_input("Confirm Password", type="password", key="signup_confirm")
+        
+        if st.button("Sign Up", key="signup_btn"):
+            if new_pass != confirm_pass:
+                st.error("Passwords don't match")
+            elif insert_user(new_user, new_pass):
+                st.success("Account created! Please login")
+            else:
+                st.error("Username exists or DB error")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # Detect session switch, clear state, force reload
-    if current_session_id and previous_session_id and current_session_id != previous_session_id:
-        st.session_state[f"chat_history_{context}"] = []
-        st.rerun()
+# --- MAIN APP FUNCTIONS (from app.py) ---
+def initialize_app():
+    """Initialize the main application"""
+    global context, current_session_id
+    # --- PAGE CONFIGURATION ---
+    st.set_page_config(
+        page_title="AI Assistant",
+        page_icon="🤖",
+        layout="wide"
+    )
 
-    # New Session Button
-    if st.button("➕ New Session"):
-        current_session_id = create_new_session(context)
+    # --- CONTEXT MAPPING ---
+    CONTEXTS = {
+        "🤖 Personalized Chatbot": "chatbot",
+        "📄 Document Upload": "doc",
+        "🌐 URL Upload": "url",
+        "📊 Data Analysis": "data"
+    }
+
+    # --- SIDEBAR NAVIGATION ---
+    with st.sidebar:
+        st.title(f"🔍 Welcome, {st.session_state.username}")
+        page = st.radio("Choose a feature:", list(CONTEXTS.keys()))
+        context = CONTEXTS[page]
+
+        # Session Selector
+        st.markdown("### 💬 Chat Sessions")
+        existing_sessions = list_sessions(context, st.session_state.username)
+        session_options = [s["title"] + f" ({s['id'][:6]})" for s in existing_sessions]
+        session_map = {s["title"] + f" ({s['id'][:6]})": s["id"] for s in existing_sessions}
+
+        # Track previous session ID to detect switch
+        previous_session_id = st.session_state.get(f"current_session_id_{context}", None)
+
+        selected_option = st.selectbox("Select a session:", session_options) if session_options else None
+        current_session_id = session_map[selected_option] if selected_option else None
         st.session_state[f"current_session_id_{context}"] = current_session_id
-        st.session_state[f"chat_history_{context}"] = []
-        st.rerun()
 
-# --- SESSION DATA LOADING ---
-if current_session_id:
-    session_data = load_session(context, current_session_id)
-    if session_data is None:
-        st.error("Failed to load selected session.")
+        # Detect session switch, clear state, force reload
+        if current_session_id and previous_session_id and current_session_id != previous_session_id:
+            st.session_state[f"chat_history_{context}"] = []
+            st.rerun()
+
+        # New Session Button
+        if st.button("➕ New Session"):
+            current_session_id = create_new_session(context, st.session_state.username)
+            st.session_state[f"current_session_id_{context}"] = current_session_id
+            st.session_state[f"chat_history_{context}"] = []
+            st.rerun()
+
+        # Logout button
+        if st.button("🚪 Logout"):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.rerun()
+
+    # --- SESSION DATA LOADING ---
+    if current_session_id:
+        session_data = load_session(context, current_session_id, st.session_state.username)
+        if session_data is None:
+            st.error("Failed to load selected session.")
+            st.stop()
+
+        # Always replace session chat history on session change
+        st.session_state[f"chat_history_{context}"] = session_data["messages"]
+    else:
+        st.warning("Please create or select a session to continue.")
         st.stop()
 
-    # Always replace session chat history on session change
-    st.session_state[f"chat_history_{context}"] = session_data["messages"]
-else:
-    st.warning("Please create or select a session to continue.")
-    st.stop()
+    # --- PAGE ROUTING ---
+    if page == "🤖 Personalized Chatbot":
+        personalized_chatbot()
+    elif page == "📄 Document Upload":
+        document_upload()
+    elif page == "🌐 URL Upload":
+        url_upload()
+    elif page == "📊 Data Analysis":
+        data_analysis()
 
-# --- CHAT INTERFACE FUNCTION ---
+# --- All your existing page functions remain exactly the same ---
 def chat_interface(chat_context, pdf_mode=False):
     st.subheader("💬 Chat with AI")
 
@@ -79,7 +202,7 @@ def chat_interface(chat_context, pdf_mode=False):
 
     if user_input:
         st.session_state[chat_context].append({"role": "user", "content": user_input})
-        save_message(context, current_session_id, "user", user_input)
+        save_message(context, current_session_id, "user", user_input, st.session_state.username)
 
         if pdf_mode:
             bot_response = query_rag(user_input, chat_history=st.session_state[chat_context])
@@ -89,18 +212,17 @@ def chat_interface(chat_context, pdf_mode=False):
 
 
         st.session_state[chat_context].append({"role": "assistant", "content": bot_response})
-        save_message(context, current_session_id, "assistant", bot_response)
+        save_message(context, current_session_id, "assistant", bot_response, st.session_state.username)
 
         with st.chat_message("assistant"):
             st.markdown(bot_response)
-
-# --- PERSONALIZED CHATBOT PAGE ---
+    # ... (rest of your existing chat_interface function) ...
+    
 def personalized_chatbot():
     st.title("🤖 Personalized Chatbot")
     st.write("Ask me anything! I'm here to help you.")
     chat_interface("chat_history_chatbot")
 
-# --- DOCUMENT UPLOAD PAGE ---
 def document_upload():
     st.title("📄 Document Upload")
     uploaded_file = st.file_uploader("Upload your document here", type=["pdf", "txt", "docx"])
@@ -113,7 +235,6 @@ def document_upload():
             st.error(response_message)
     chat_interface("chat_history_doc", pdf_mode=True)
 
-# --- URL UPLOAD PAGE ---
 def url_upload():
     st.title("🌐 URL Upload")
 
@@ -133,12 +254,12 @@ def url_upload():
             # Save user instruction to chat history
             user_msg = f"Scrape the content from this URL:\n{url_input}\n\nRequirement:\n{custom_requirement}"
             st.session_state["chat_history_url"].append({"role": "user", "content": user_msg})
-            save_message("url", st.session_state["current_session_id_url"], "user", user_msg)
+            save_message("url", st.session_state["current_session_id_url"], "user", user_msg, st.session_state.username)
 
             if scraped_content:
                 success_msg = f"✅ Successfully scraped content from: {url_input}\n**Title:** {scraped_content.get('title', 'No Title')}"
                 st.session_state["chat_history_url"].append({"role": "assistant", "content": success_msg})
-                save_message("url", st.session_state["current_session_id_url"], "assistant", success_msg)
+                save_message("url", st.session_state["current_session_id_url"], "assistant", success_msg, st.session_state.username)
 
                 # Immediately format with Gemini
                 with st.spinner("Formatting with Gemini..."):
@@ -147,17 +268,17 @@ def url_upload():
                 if formatted_output:
                     st.session_state.formatted_output = formatted_output
                     st.session_state["chat_history_url"].append({"role": "assistant", "content": formatted_output})
-                    save_message("url", st.session_state["current_session_id_url"], "assistant", formatted_output)
+                    save_message("url", st.session_state["current_session_id_url"], "assistant", formatted_output, st.session_state.username)
                     st.success("Formatted successfully!")
                 else:
                     err_msg = "❌ Failed to format content with Gemini."
                     st.session_state["chat_history_url"].append({"role": "assistant", "content": err_msg})
-                    save_message("url", st.session_state["current_session_id_url"], "assistant", err_msg)
+                    save_message("url", st.session_state["current_session_id_url"], "assistant", err_msg, st.session_state.username)
                     st.error(err_msg)
             else:
                 err_msg = f"❌ Failed to scrape content from: {url_input}"
                 st.session_state["chat_history_url"].append({"role": "assistant", "content": err_msg})
-                save_message("url", st.session_state["current_session_id_url"], "assistant", err_msg)
+                save_message("url", st.session_state["current_session_id_url"], "assistant", err_msg, st.session_state.username)
                 st.error(err_msg)
         else:
             st.warning("Please provide both the URL and the scraping requirement.")
@@ -177,7 +298,7 @@ def url_upload():
         user_input = st.chat_input("Ask about the scraped content...")
         if user_input and st.session_state.get("scraped_content"):
             st.session_state["chat_history_url"].append({"role": "user", "content": user_input})
-            save_message("url", st.session_state["current_session_id_url"], "user", user_input)
+            save_message("url", st.session_state["current_session_id_url"], "user", user_input, st.session_state.username)
 
             with st.spinner("Thinking..."):
                 followup_response = format_with_gemini(
@@ -188,13 +309,13 @@ def url_upload():
 
             if followup_response:
                 st.session_state["chat_history_url"].append({"role": "assistant", "content": followup_response})
-                save_message("url", st.session_state["current_session_id_url"], "assistant", followup_response)
+                save_message("url", st.session_state["current_session_id_url"], "assistant", followup_response, st.session_state.username)
                 with st.chat_message("assistant"):
                     st.markdown(followup_response)
             else:
                 err_msg = "❌ Gemini failed to respond."
                 st.session_state["chat_history_url"].append({"role": "assistant", "content": err_msg})
-                save_message("url", st.session_state["current_session_id_url"], "assistant", err_msg)
+                save_message("url", st.session_state["current_session_id_url"], "assistant", err_msg, st.session_state.username)
                 st.error(err_msg)
 
     with tab2:
@@ -226,29 +347,26 @@ def url_upload():
         else:
             st.info("No content scraped yet. Enter a URL to begin.")
 
-
-
-# --- DATA ANALYSIS PAGE ---
 def data_analysis():
     st.title("📊 Data Analysis")
     uploaded_excel = st.file_uploader("Upload your Excel file here", type=["xlsx", "csv"])
     if uploaded_excel:
         st.success("Excel file uploaded successfully! 🟢")
     chat_interface("chat_history_data")
+    
 
-# --- SETTINGS PAGE ---
-def settings():
-    st.title("⚙️ Settings")
-    st.write("Configure your app settings here.")
+# --- MAIN APP FLOW CONTROL ---
+def main():
+    # Initialize session state for auth
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+        st.session_state.username = None
+    
+    # Show auth page if not logged in, else show main app
+    if not st.session_state.logged_in:
+        show_auth_page()
+    else:
+        initialize_app()
 
-# --- PAGE ROUTING ---
-if page == "🤖 Personalized Chatbot":
-    personalized_chatbot()
-elif page == "📄 Document Upload":
-    document_upload()
-elif page == "🌐 URL Upload":
-    url_upload()
-elif page == "📊 Data Analysis":
-    data_analysis()
-elif page == "⚙️ Settings":
-    settings()
+if __name__ == "__main__":
+    main()
